@@ -215,7 +215,7 @@ void resetNavConfig(navConfig_t * navConfig)
     navConfig->fw.launch_velocity_thresh = 300;         // 3 m/s
     navConfig->fw.launch_accel_thresh = 1.9f * 981;     // cm/s/s (1.9*G)
     navConfig->fw.launch_time_thresh = 40;              // 40ms
-    navConfig->fw.launch_throttle = 1000;               // Motor idle or MOTOR_STOP
+    navConfig->fw.launch_idle_throttle = 1000;          // Motor idle or MOTOR_STOP
     navConfig->fw.launch_throttle = 1700;
     navConfig->fw.launch_motor_timer = 500;             // ms
     navConfig->fw.launch_motor_spinup_time = 0;         // ms, time to gredually increase throttle from idle to launch
