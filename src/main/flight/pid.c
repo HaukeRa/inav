@@ -150,6 +150,27 @@ void pidResetErrorAccumulators(void)
     pidState[FD_YAW].axisLockAccum = 0;
 }
 
+static fpQuaternion_t pidRcCommandToQuaternion(float maxInclination)
+{
+  fpAxisAngle_t rollPitchCommand;
+
+  // Cross-product between stick and z-axis
+  rollPitchCommand.axis.V.X = - rcCommand[FD_PITCH]/500.0f;
+  rollPitchCommand.axis.V.Y = rcCommand[FD_ROLL]/500.0f;
+  rollPitchCommand.axis.V.Z = 0;
+
+  float length = sqrtf(rollPitchCommand.axis.V.X*rollPitchCommand.axis.V.X
+                       + rollPitchCommand.axis.V.Y*rollPitchCommand.axis.V.Y);
+
+  // We do not have asin_approx
+  float commandAngle = M_PIf/2.0f - acos_approx(constrainf(length,0,1));
+  rollPitchCommand.angle = scaleRangef(commandAngle,0,M_PIf/2.0f,0,DECIDEGREES_TO_RADIANS(maxInclination));
+
+  fpQuaternion_t rollPitchQuat = axisAngleToQuaternion(rollPitchCommand);
+
+  return rollPitchQuat;
+}
+
 static float pidRcCommandToAngle(int16_t stick, int16_t maxInclination)
 {
     stick = constrain(stick, -500, 500);
@@ -311,6 +332,23 @@ static float calcHorizonRateMagnitude(const pidProfile_t *pidProfile, const rxCo
     }
 
     return horizonRateMagnitude;
+}
+
+static void pidQuaternionLevel(const pidProfile_t *pidProfile, const controlRateConfig_t *controlRateConfig, float horizonRateMagnitude)
+{
+  // TODO: Separate max angle inclination on pitch and roll?
+  fpQuaternion_t orientationTarget = pidRcCommandToQuaternion(pidProfile->max_angle_inclination[AI_ROLL]);
+  fpQuaternion_t q_p = quaternProd(quaternConj(orientationTarget),orientation);
+
+  fpAxisAngle_t targetRates = quaternToAxisAngle(q_p);
+
+  float Kp = pidProfile->P8[PIDLEVEL]/100.0f; //Test scaling
+
+  for (int axis = 0; axis < 3; axis++) {
+      float rateTarget = RADIANS_TO_DECIDEGREES(-targetRates.angle * targetRates.axis.A[axis] * Kp);
+      rateTarget = constrainf(rateTarget, -controlRateConfig->rates[FD_ROLL] * 10.0f, controlRateConfig->rates[axis] * 10.0f);
+      pidState[axis].rateTarget = rateTarget;
+  }
 }
 
 static void pidLevel(const pidProfile_t *pidProfile, const controlRateConfig_t *controlRateConfig, pidState_t *pidState, flight_dynamics_index_t axis, float horizonRateMagnitude)
@@ -577,12 +615,19 @@ void pidController(const pidProfile_t *pidProfile, const controlRateConfig_t *co
         pidState[axis].rateTarget = constrainf(rateTarget, -GYRO_SATURATION_LIMIT, +GYRO_SATURATION_LIMIT);
     }
 
+
     // Step 3: Run control for ANGLE_MODE, HORIZON_MODE, and HEADING_LOCK
     if (FLIGHT_MODE(ANGLE_MODE) || FLIGHT_MODE(HORIZON_MODE)) {
         const float horizonRateMagnitude = calcHorizonRateMagnitude(pidProfile, rxConfig);
-        pidLevel(pidProfile, controlRateConfig, &pidState[FD_ROLL], FD_ROLL, horizonRateMagnitude);
-        pidLevel(pidProfile, controlRateConfig, &pidState[FD_PITCH], FD_PITCH, horizonRateMagnitude);
+        if(true){
+            // Overrides all previous rate targets
+            pidQuaternionLevel(pidProfile,controlRateConfig,horizonRateMagnitude);
+        } else {
+            pidLevel(pidProfile, controlRateConfig, &pidState[FD_ROLL], FD_ROLL, horizonRateMagnitude);
+            pidLevel(pidProfile, controlRateConfig, &pidState[FD_PITCH], FD_PITCH, horizonRateMagnitude);
+        }
     }
+
 
 #ifdef USE_FLM_HEADLOCK
     if (FLIGHT_MODE(HEADING_LOCK) && magHoldState != MAG_HOLD_ENABLED) {

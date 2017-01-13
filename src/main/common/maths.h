@@ -115,6 +115,11 @@ typedef struct {
     float q0, q1, q2, q3;
 } fpQuaternion_t;
 
+typedef struct {
+    t_fp_vector axis;
+    float angle;
+} fpAxisAngle_t;
+
 typedef struct filterWithBufferSample_s {
     float value;
     uint32_t timestamp;
@@ -183,3 +188,9 @@ uint16_t crc16_ccitt(uint16_t crc, unsigned char a);
 uint8_t crc8_dvb_s2(uint8_t crc, unsigned char a);
 
 float bellCurve(const float x, const float curveWidth);
+
+fpQuaternion_t quaternConj(fpQuaternion_t q);
+fpQuaternion_t quaternProd(fpQuaternion_t a, fpQuaternion_t b);
+fpAxisAngle_t quaternToAxisAngle(fpQuaternion_t q);
+fpQuaternion_t axisAngleToQuaternion(fpAxisAngle_t a);
+t_fp_vector vectCross(t_fp_vector a, t_fp_vector b);

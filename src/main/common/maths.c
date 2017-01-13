@@ -476,3 +476,72 @@ float bellCurve(const float x, const float curveWidth)
 {
     return powf(M_Ef, -sq(x) / (2.0f * sq(curveWidth)));
 }
+
+fpQuaternion_t quaternConj(fpQuaternion_t q)
+{
+    q.q1 = -q.q1;
+    q.q2 = -q.q2;
+    q.q3 = -q.q3;
+    return q;
+}
+
+fpQuaternion_t quaternProd(fpQuaternion_t a, fpQuaternion_t b)
+{
+  fpQuaternion_t p;
+  p.q0 = a.q0*b.q0 - a.q1*b.q1 - a.q2*b.q2 - a.q3*b.q3;
+  p.q1 = a.q0*b.q1 + a.q1*b.q0 + a.q2*b.q3 - a.q3*b.q2;
+  p.q2 = a.q0*b.q2 - a.q1*b.q3 + a.q2*b.q0 + a.q3*b.q1;
+  p.q3 = a.q0*b.q3 + a.q1*b.q2 - a.q2*b.q1 + a.q3*b.q0;
+  return p;
+}
+
+fpAxisAngle_t quaternToAxisAngle(fpQuaternion_t q)
+{
+  fpAxisAngle_t a;
+
+  // Always provide normalized axis, used in case angle is near zero
+  a = (fpAxisAngle_t){.axis = {1, 0, 0}};
+
+  // We expect to have normalized quaternion, but apply constraint to prevent
+  // NaN if it is not.
+  a.angle = 2*acos_approx(constrainf(q.q0,-1,1));
+
+  if(a.angle > M_PIf){
+      a.angle -= 2*M_PIf;
+  }
+
+  float mag = sqrt(1 - q.q0*q.q0);
+  if(mag > 1e-6f){
+      // Axis is only valid when rotation is large enough
+      a.axis.V.X = q.q1/mag;
+      a.axis.V.Y = q.q2/mag;
+      a.axis.V.Z = q.q3/mag;
+  }else{
+      // use arbitrary axis with angle 0
+      a.angle = 0;
+  }
+  return a;
+}
+
+fpQuaternion_t axisAngleToQuaternion(fpAxisAngle_t a)
+{
+  fpQuaternion_t q;
+  q.q0 = cos_approx(a.angle/2.0f);
+
+  // TODO: Use sqrt(1 - q.q0*q.q0) if its faster
+  float s = sin_approx(a.angle/2.0f);
+  q.q1 = -a.axis.V.X*s;
+  q.q2 = -a.axis.V.Y*s;
+  q.q3 = -a.axis.V.Z*s;
+
+  return q;
+}
+
+t_fp_vector vectCross(t_fp_vector a, t_fp_vector b)
+{
+  t_fp_vector ab;
+  ab.V.X = a.V.Y*b.V.Z - a.V.Z*b.V.Y;
+  ab.V.Y = a.V.Z*b.V.X - a.V.X*b.V.Z;
+  ab.V.Z = a.V.X*b.V.Y - a.V.Y*b.V.X;
+  return ab;
+}
