@@ -150,7 +150,7 @@ void pidResetErrorAccumulators(void)
     pidState[FD_YAW].axisLockAccum = 0;
 }
 
-static fpQuaternion_t pidRcCommandToQuaternion(float maxInclination)
+static fpQuaternion_t pidRcCommandToQuaternion(int16_t maxInclination)
 {
   fpAxisAngle_t rollPitchCommand;
 
@@ -162,11 +162,19 @@ static fpQuaternion_t pidRcCommandToQuaternion(float maxInclination)
   float length = sqrtf(rollPitchCommand.axis.V.X*rollPitchCommand.axis.V.X
                        + rollPitchCommand.axis.V.Y*rollPitchCommand.axis.V.Y);
 
-  // We do not have asin_approx
-  float commandAngle = M_PIf/2.0f - acos_approx(constrainf(length,0,1));
-  rollPitchCommand.angle = scaleRangef(commandAngle,0,M_PIf/2.0f,0,DECIDEGREES_TO_RADIANS(maxInclination));
+  rollPitchCommand.axis.V.X /= length;
+  rollPitchCommand.axis.V.Y /= length;
 
-  fpQuaternion_t rollPitchQuat = axisAngleToQuaternion(rollPitchCommand);
+  float deflection = constrainf(length,0,1);
+  rollPitchCommand.angle = deflection * DECIDEGREES_TO_RADIANS(maxInclination);
+
+  fpQuaternion_t rollPitchQuat;
+
+  if(deflection > 0.01f){
+      rollPitchQuat = axisAngleToQuaternion(rollPitchCommand);
+  }else{
+      rollPitchQuat = (fpQuaternion_t){1.0f, 0.0f, 0.0f, 0.0f};
+  }
 
   return rollPitchQuat;
 }
@@ -337,7 +345,7 @@ static float calcHorizonRateMagnitude(const pidProfile_t *pidProfile, const rxCo
 static void pidQuaternionLevel(const pidProfile_t *pidProfile, const controlRateConfig_t *controlRateConfig, float horizonRateMagnitude)
 {
   // TODO: Separate max angle inclination on pitch and roll?
-  fpQuaternion_t orientationTarget = pidRcCommandToQuaternion(pidProfile->max_angle_inclination[AI_ROLL]);
+  fpQuaternion_t orientationTarget = pidRcCommandToQuaternion(900 /*pidProfile->max_angle_inclination[AI_ROLL]*/);
   fpQuaternion_t q_p = quaternProd(quaternConj(orientationTarget),orientation);
 
   fpAxisAngle_t targetRates = quaternToAxisAngle(q_p);
@@ -348,6 +356,7 @@ static void pidQuaternionLevel(const pidProfile_t *pidProfile, const controlRate
       float rateTarget = RADIANS_TO_DECIDEGREES(-targetRates.angle * targetRates.axis.A[axis] * Kp);
       rateTarget = constrainf(rateTarget, -controlRateConfig->rates[FD_ROLL] * 10.0f, controlRateConfig->rates[axis] * 10.0f);
       pidState[axis].rateTarget = rateTarget;
+      //debug[axis] = rateTarget;
   }
 }
 
