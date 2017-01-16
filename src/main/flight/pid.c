@@ -152,30 +152,29 @@ void pidResetErrorAccumulators(void)
 
 static fpQuaternion_t pidRcCommandToQuaternion(int16_t maxInclination)
 {
-  fpAxisAngle_t rollPitchCommand;
-
-  // Cross-product between stick and z-axis
-  rollPitchCommand.axis.V.X = - rcCommand[FD_PITCH]/500.0f;
-  rollPitchCommand.axis.V.Y = rcCommand[FD_ROLL]/500.0f;
-  rollPitchCommand.axis.V.Z = 0;
-
-  float length = sqrtf(rollPitchCommand.axis.V.X*rollPitchCommand.axis.V.X
-                       + rollPitchCommand.axis.V.Y*rollPitchCommand.axis.V.Y);
-
-  rollPitchCommand.axis.V.X /= length;
-  rollPitchCommand.axis.V.Y /= length;
-
-  float deflection = constrainf(length,0,1);
-  rollPitchCommand.angle = deflection * DECIDEGREES_TO_RADIANS(maxInclination);
-
   fpQuaternion_t rollPitchQuat;
 
-  if(deflection > 0.01f){
+  if(rcCommand[FD_PITCH] != 0 && rcCommand[FD_ROLL] != 0){
+      fpAxisAngle_t rollPitchCommand;
+      // Cross-product between stick and z-axis
+      rollPitchCommand.axis.V.X = - rcCommand[FD_PITCH]/500.0f;
+      rollPitchCommand.axis.V.Y = rcCommand[FD_ROLL]/500.0f;
+      rollPitchCommand.axis.V.Z = 0;
+
+      float length = sqrtf(rollPitchCommand.axis.V.X*rollPitchCommand.axis.V.X
+                           + rollPitchCommand.axis.V.Y*rollPitchCommand.axis.V.Y);
+
+      rollPitchCommand.axis.V.X /= length;
+      rollPitchCommand.axis.V.Y /= length;
+
+      float deflection = constrainf(length,0,1);
+      rollPitchCommand.angle = deflection * DECIDEGREES_TO_RADIANS(maxInclination);
+
       rollPitchQuat = axisAngleToQuaternion(rollPitchCommand);
   }else{
+      // no rotation
       rollPitchQuat = (fpQuaternion_t){1.0f, 0.0f, 0.0f, 0.0f};
   }
-
   return rollPitchQuat;
 }
 
@@ -345,12 +344,12 @@ static float calcHorizonRateMagnitude(const pidProfile_t *pidProfile, const rxCo
 static void pidQuaternionLevel(const pidProfile_t *pidProfile, const controlRateConfig_t *controlRateConfig, float horizonRateMagnitude)
 {
   // TODO: Separate max angle inclination on pitch and roll?
-  fpQuaternion_t orientationTarget = pidRcCommandToQuaternion(900 /*pidProfile->max_angle_inclination[AI_ROLL]*/);
+  fpQuaternion_t orientationTarget = pidRcCommandToQuaternion(pidProfile->max_angle_inclination[AI_ROLL]);
   fpQuaternion_t q_p = quaternProd(quaternConj(orientationTarget),orientation);
 
   fpAxisAngle_t targetRates = quaternToAxisAngle(q_p);
 
-  float Kp = pidProfile->P8[PIDLEVEL]/100.0f; //Test scaling
+  float Kp = pidProfile->P8[PIDLEVEL] / FP_PID_LEVEL_P_MULTIPLIER; //Test scaling
 
   for (int axis = 0; axis < 3; axis++) {
       float rateTarget = RADIANS_TO_DECIDEGREES(-targetRates.angle * targetRates.axis.A[axis] * Kp);
