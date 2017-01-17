@@ -193,4 +193,5 @@ fpQuaternion_t quaternConj(fpQuaternion_t q);
 fpQuaternion_t quaternProd(fpQuaternion_t a, fpQuaternion_t b);
 fpAxisAngle_t quaternToAxisAngle(fpQuaternion_t q);
 fpQuaternion_t axisAngleToQuaternion(fpAxisAngle_t a);
+t_fp_vector rotateVQ(t_fp_vector vect, fpQuaternion_t q);
 t_fp_vector vectCross(t_fp_vector a, t_fp_vector b);

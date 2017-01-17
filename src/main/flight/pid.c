@@ -106,6 +106,8 @@ int32_t axisPID_P[FLIGHT_DYNAMICS_INDEX_COUNT], axisPID_I[FLIGHT_DYNAMICS_INDEX_
 
 static pidState_t pidState[FLIGHT_DYNAMICS_INDEX_COUNT];
 
+static float headingTarget;
+
 void pidInit(void)
 {
     // Calculate derivative using 5-point noise-robust differentiators without time delay (one-sided or forward filters)
@@ -150,34 +152,6 @@ void pidResetErrorAccumulators(void)
     pidState[FD_YAW].axisLockAccum = 0;
 }
 
-static fpQuaternion_t pidRcCommandToQuaternion(int16_t maxInclination)
-{
-  fpQuaternion_t rollPitchQuat;
-
-  if(rcCommand[FD_PITCH] != 0 && rcCommand[FD_ROLL] != 0){
-      fpAxisAngle_t rollPitchCommand;
-      // Cross-product between stick and z-axis
-      rollPitchCommand.axis.V.X = - rcCommand[FD_PITCH]/500.0f;
-      rollPitchCommand.axis.V.Y = rcCommand[FD_ROLL]/500.0f;
-      rollPitchCommand.axis.V.Z = 0;
-
-      float length = sqrtf(rollPitchCommand.axis.V.X*rollPitchCommand.axis.V.X
-                           + rollPitchCommand.axis.V.Y*rollPitchCommand.axis.V.Y);
-
-      rollPitchCommand.axis.V.X /= length;
-      rollPitchCommand.axis.V.Y /= length;
-
-      float deflection = constrainf(length,0,1);
-      rollPitchCommand.angle = deflection * DECIDEGREES_TO_RADIANS(maxInclination);
-
-      rollPitchQuat = axisAngleToQuaternion(rollPitchCommand);
-  }else{
-      // no rotation
-      rollPitchQuat = (fpQuaternion_t){1.0f, 0.0f, 0.0f, 0.0f};
-  }
-  return rollPitchQuat;
-}
-
 static float pidRcCommandToAngle(int16_t stick, int16_t maxInclination)
 {
     stick = constrain(stick, -500, 500);
@@ -205,6 +179,59 @@ float pidRcCommandToRate(int16_t stick, uint8_t rate)
 {
     const float maxRateDPS = rate * 10.0f;
     return scaleRangef((float) stick, -500.0f, 500.0f, -maxRateDPS, maxRateDPS);
+}
+
+static fpQuaternion_t pidRcCommandToQuaternion(const controlRateConfig_t *controlRateConfig, int16_t maxInclination)
+{
+  fpQuaternion_t yawQuat;
+  fpAxisAngle_t yawCommand;
+
+  if(!ARMING_FLAG(ARMED)){
+      t_fp_vector eX = {1.0f, 0.0f, 0.0f};
+      t_fp_vector ex_earth = rotateVQ(eX,orientation);
+      if(ex_earth.V.X != 0 || ex_earth.V.Y !=0){
+          headingTarget =  - atan2_approx(ex_earth.V.Y,ex_earth.V.X);
+      }
+  }else{
+      // TODO: Apply deadband
+      float yawRate = pidRcCommandToRate(rcCommand[FD_YAW], controlRateConfig->rates[FD_YAW]);
+      headingTarget += DEGREES_TO_RADIANS(yawRate) * gyro.targetLooptime / 1000.0f / 1000.0f;
+      if(headingTarget > M_PIf){
+          headingTarget -= 2*M_PIf;
+      }else if(headingTarget < -M_PIf){
+          headingTarget += 2*M_PIf;
+      }
+  }
+  debug[3] = RADIANS_TO_DECIDEGREES(headingTarget);
+
+  yawCommand.axis = (t_fp_vector){0.0f, 0.0f, -1.0f};
+  yawCommand.angle = headingTarget;
+  yawQuat = axisAngleToQuaternion(yawCommand);
+
+  fpQuaternion_t rollPitchQuat;
+
+  if(rcCommand[FD_PITCH] != 0 || rcCommand[FD_ROLL] != 0){
+      fpAxisAngle_t rollPitchCommand;
+      // Cross-product between stick and z-axis
+      rollPitchCommand.axis.V.X = - rcCommand[FD_ROLL]/500.0f;
+      rollPitchCommand.axis.V.Y = - rcCommand[FD_PITCH]/500.0f;
+      rollPitchCommand.axis.V.Z = 0;
+
+      float length = sqrtf(rollPitchCommand.axis.V.X*rollPitchCommand.axis.V.X
+                           + rollPitchCommand.axis.V.Y*rollPitchCommand.axis.V.Y);
+
+      rollPitchCommand.axis.V.X /= length;
+      rollPitchCommand.axis.V.Y /= length;
+
+      float deflection = constrainf(length,0,1);
+      rollPitchCommand.angle = deflection * DECIDEGREES_TO_RADIANS(maxInclination);
+
+      rollPitchQuat = axisAngleToQuaternion(rollPitchCommand);
+  }else{
+      // no rotation
+      rollPitchQuat = (fpQuaternion_t){1.0f, 0.0f, 0.0f, 0.0f};
+  }
+  return quaternProd(rollPitchQuat, yawQuat);
 }
 
 /*
@@ -343,20 +370,19 @@ static float calcHorizonRateMagnitude(const pidProfile_t *pidProfile, const rxCo
 
 static void pidQuaternionLevel(const pidProfile_t *pidProfile, const controlRateConfig_t *controlRateConfig, float horizonRateMagnitude)
 {
-  // TODO: Separate max angle inclination on pitch and roll?
-  fpQuaternion_t orientationTarget = pidRcCommandToQuaternion(pidProfile->max_angle_inclination[AI_ROLL]);
-  fpQuaternion_t q_p = quaternProd(quaternConj(orientationTarget),orientation);
+    // TODO: Separate max angle inclination on pitch and roll?
+    fpQuaternion_t orientationTarget = pidRcCommandToQuaternion(controlRateConfig, pidProfile->max_angle_inclination[AI_ROLL]);
+    fpQuaternion_t q_p = quaternProd(quaternConj(orientationTarget),orientation);
 
-  fpAxisAngle_t targetRates = quaternToAxisAngle(q_p);
+    fpAxisAngle_t targetRates = quaternToAxisAngle(q_p);
 
-  float Kp = pidProfile->P8[PIDLEVEL] / FP_PID_LEVEL_P_MULTIPLIER; //Test scaling
+    float Kp = pidProfile->P8[PIDLEVEL] / FP_PID_LEVEL_P_MULTIPLIER; //Test scaling
 
-  for (int axis = 0; axis < 3; axis++) {
-      float rateTarget = RADIANS_TO_DECIDEGREES(-targetRates.angle * targetRates.axis.A[axis] * Kp);
-      rateTarget = constrainf(rateTarget, -controlRateConfig->rates[FD_ROLL] * 10.0f, controlRateConfig->rates[axis] * 10.0f);
-      pidState[axis].rateTarget = rateTarget;
-      //debug[axis] = rateTarget;
-  }
+    for (int axis = 0; axis < 3; axis++) {
+        float rateTarget = RADIANS_TO_DECIDEGREES(-targetRates.angle * targetRates.axis.A[axis] * Kp);
+        rateTarget = constrainf(rateTarget, -controlRateConfig->rates[FD_ROLL] * 10.0f, controlRateConfig->rates[axis] * 10.0f);
+        pidState[axis].rateTarget = rateTarget;
+    }
 }
 
 static void pidLevel(const pidProfile_t *pidProfile, const controlRateConfig_t *controlRateConfig, pidState_t *pidState, flight_dynamics_index_t axis, float horizonRateMagnitude)

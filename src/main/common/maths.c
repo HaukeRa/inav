@@ -537,6 +537,21 @@ fpQuaternion_t axisAngleToQuaternion(fpAxisAngle_t a)
   return q;
 }
 
+t_fp_vector rotateVQ(t_fp_vector vect, fpQuaternion_t q)
+{
+    fpQuaternion_t src;
+    src.q0 = 0;
+    src.q1 = vect.V.X;
+    src.q2 = vect.V.Y;
+    src.q3 = vect.V.Z;
+    fpQuaternion_t res = quaternProd(quaternProd(quaternConj(q),src),q);
+    t_fp_vector resVect;
+    resVect.V.X = res.q1;
+    resVect.V.Y = res.q2;
+    resVect.V.Z = res.q3;
+    return resVect;
+}
+
 t_fp_vector vectCross(t_fp_vector a, t_fp_vector b)
 {
   t_fp_vector ab;
