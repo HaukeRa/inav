@@ -213,8 +213,8 @@ static fpQuaternion_t pidRcCommandToQuaternion(const controlRateConfig_t *contro
   if(rcCommand[FD_PITCH] != 0 || rcCommand[FD_ROLL] != 0){
       fpAxisAngle_t rollPitchCommand;
       // Cross-product between stick and z-axis
-      rollPitchCommand.axis.V.X = - rcCommand[FD_ROLL]/500.0f;
-      rollPitchCommand.axis.V.Y = - rcCommand[FD_PITCH]/500.0f;
+      rollPitchCommand.axis.V.X = rcCommand[FD_ROLL]/500.0f;
+      rollPitchCommand.axis.V.Y = rcCommand[FD_PITCH]/500.0f;
       rollPitchCommand.axis.V.Z = 0;
 
       float length = sqrtf(rollPitchCommand.axis.V.X*rollPitchCommand.axis.V.X
